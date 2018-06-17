@@ -13,6 +13,23 @@ import re
 import hmac
 from io import BytesIO
 
+try:
+    import urllib.request
+    import urllib.parse
+except ImportError:
+    import urllib
+
+import re
+try:
+    parse_helper = urllib.parse
+except AttributeError:
+    parse_helper = urllib
+try:
+    request_helper = urllib.request
+except AttributeError:
+    request_helper = urllib
+
+
 from clint.textui.progress import Bar as ProgressBar
 # AES.MODE_GCM requires PyCryptodome
 try:
@@ -30,6 +47,29 @@ def generatePassphrase(wordscount=4):
     wordfile = xp.locate_wordfile('eff-long')
     mywords = xp.generate_wordlist(wordfile=wordfile, min_length=4, max_length=8)
     return xp.generate_xkcdpassword(mywords, numwords=wordscount, delimiter='+')
+
+def shortenUrl(url):
+    """
+    Shortens a URL using the TinyURL API.
+	In case of failure, the original URL is returned
+    """
+    result = url
+    try:
+        if url != '' and url is not None:
+            regex = re.compile("http(s?):\/\/[\/]?")
+            searchres = regex.search(url)
+            if searchres is not None:
+                url_data = parse_helper.urlencode(dict(url=url))
+                byte_data = str.encode(url_data)
+                ret = request_helper.urlopen(
+                    "https://tinyurl.com/api-create.php", data=byte_data).read()                
+                response = str(ret);
+                if (response.startswith("b\'http://") or response.startswith("b\'https://")) and response.endswith("\'"):
+                    result = response[2:-1].replace('http://', 'https://')
+    except Exception as ex:
+        print("Failed to get shortned link. Error:", ex)
+
+    return result
 
 def b64encode(s):
     return base64.urlsafe_b64encode(s).decode().rstrip('=')
@@ -292,6 +332,8 @@ def parse_args(argv):
     group = parser.add_argument_group('Uploading options')
     group.add_argument('--random-password', action='store_true',
                        help="Use a randomly generated password. Can not be specified at the same time as -p/--password.")
+    group.add_argument('--short-url', action='store_true',
+                       help="Generate a short URL for the download link using the TinyURL shortening web service.")
 
     group = parser.add_argument_group('General actions')
     group.add_argument('-i', '--info', action='store_true',
@@ -318,9 +360,14 @@ def main(argv):
         password=args.password
         if args.random_password:
             password = generatePassphrase()
-        upload(args.target, password=password)
+        url, ownerToken = upload(args.target, password=password)
         if args.random_password:
             print("Your random password is", password)
+
+        if args.short_url:
+            shortUrl = shortenUrl (url)
+            if  shortUrl != url:
+                print("Your shortned download link is", shortUrl)
         return
 
     fid, secret = parse_url(args.target)
