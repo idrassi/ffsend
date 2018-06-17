@@ -24,6 +24,12 @@ except ImportError:
 import requests
 from requests_toolbelt.multipart.encoder import MultipartEncoder, MultipartEncoderMonitor, total_len
 
+from xkcdpass import xkcd_password as xp
+
+def generatePassphrase(wordscount=4):
+    wordfile = xp.locate_wordfile('eff-long')
+    mywords = xp.generate_wordlist(wordfile=wordfile, min_length=4, max_length=8)
+    return xp.generate_xkcdpassword(mywords, numwords=wordscount, delimiter='+')
 
 def b64encode(s):
     return base64.urlsafe_b64encode(s).decode().rstrip('=')
@@ -52,7 +58,7 @@ def deriveAuthKey(secret, password=None, url=None):
     if password is None:
         return hkdf(64, secret, info=b'authentication')
     return PBKDF2(password.encode('utf8'), url.encode('utf8'), 64, 100,
-                  lambda x, y: hmac.new(x, y, sha256).digest())
+        lambda x, y: hmac.new(x, y, sha256).digest())
 
 def deriveMetaKey(secret):
     return hkdf(16, secret, info=b'metadata')
@@ -282,6 +288,10 @@ def parse_args(argv):
     group.add_argument('target', help="URL to download or file to upload")
     group.add_argument('-p', '--password', help="Password to use")
     group.add_argument('-o', '--output', help="Output directory or file; only relevant for download")
+    
+    group = parser.add_argument_group('Uploading options')
+    group.add_argument('--random-password', action='store_true',
+                       help="Use a randomly generated password. Can not be specified at the same time as -p/--password.")
 
     group = parser.add_argument_group('General actions')
     group.add_argument('-i', '--info', action='store_true',
@@ -302,8 +312,15 @@ def main(argv):
     if os.path.exists(args.target):
         if args.info or args.token or args.output:
             parser.error("-i/-t/-o must not be specified with an upload")
+        if args.random_password and args.password is not None:
+            parser.error("--random-password can not be specified at the same time as -p/--password")
         print("Uploading %s..." % args.target)
-        upload(args.target, password=args.password)
+        password=args.password
+        if args.random_password:
+            password = generatePassphrase()
+        upload(args.target, password=password)
+        if args.random_password:
+            print("Your random password is", password)
         return
 
     fid, secret = parse_url(args.target)
