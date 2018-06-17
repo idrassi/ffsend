@@ -51,7 +51,7 @@ def generatePassphrase(wordscount=4):
 def shortenUrl(url):
     """
     Shortens a URL using the TinyURL API.
-	In case of failure, the original URL is returned
+    In case of failure, the original URL is returned
     """
     result = url
     try:
@@ -193,28 +193,33 @@ def _upload(filename, file, password=None):
                          LazyEncryptedFileWithTag(file, fileCipher, taglen=16),
                          'application/octet-stream')})
     mpmon = MultipartEncoderMonitor(mpenc, callback=upload_progress_callback(mpenc))
-    resp = requests.post('https://send.firefox.com/api/upload', data=mpmon,
-                         headers={
-                             'X-File-Metadata': b64encode(metadata),
-                             'Authorization': 'send-v1 ' + b64encode(authKey),
-                             'Content-Type': mpmon.content_type})
-    print()
-    resp.raise_for_status()
-    res = resp.json()
-    url = res['url'] + '#' + b64encode(secret)
-    ownerToken = res['owner']
 
-    if password is not None:
-        fid, secret = parse_url(url)
-        newAuthKey = deriveAuthKey(secret, password, url)
-        resp = requests.post('https://send.firefox.com/api/password/' + fid,
-                             headers={'Content-Type': 'application/json'},
-                             json={'auth': b64encode(newAuthKey), 'owner_token': ownerToken})
+    try:
+        resp = requests.post('https://send.firefox.com/api/upload', data=mpmon,
+                             headers={
+                                 'X-File-Metadata': b64encode(metadata),
+                                 'Authorization': 'send-v1 ' + b64encode(authKey),
+                                 'Content-Type': mpmon.content_type})
+        print()
         resp.raise_for_status()
+        res = resp.json()
+        url = res['url'] + '#' + b64encode(secret)
+        ownerToken = res['owner']
 
-    print("Your download link is", url)
-    print("Owner token is", ownerToken)
-    return url, res['owner']
+        if password is not None:
+            fid, secret = parse_url(url)
+            newAuthKey = deriveAuthKey(secret, password, url)
+            resp = requests.post('https://send.firefox.com/api/password/' + fid,
+                                 headers={'Content-Type': 'application/json'},
+                                 json={'auth': b64encode(newAuthKey), 'owner_token': ownerToken})
+            resp.raise_for_status()
+
+        print("Your download link is", url)
+        print("Owner token is", ownerToken)
+        return url, ownerToken
+    except Exception as ex:
+        print ("\nAn exception occured while uploading file:", ex)
+        return None, None
 
 def upload(filename, file=None, password=None):
     if file is None:
@@ -361,13 +366,15 @@ def main(argv):
         if args.random_password:
             password = generatePassphrase()
         url, ownerToken = upload(args.target, password=password)
-        if args.random_password:
-            print("Your random password is", password)
 
-        if args.short_url:
-            shortUrl = shortenUrl (url)
-            if  shortUrl != url:
-                print("Your shortned download link is", shortUrl)
+        if url is not None and ownerToken is not None:
+            if args.random_password:
+                print("Your random password is", password)
+
+            if args.short_url:
+                shortUrl = shortenUrl (url)
+                if  shortUrl != url:
+                    print("Your shortned download link is", shortUrl)
         return
 
     fid, secret = parse_url(args.target)
@@ -385,17 +392,23 @@ def main(argv):
         s, ttl = divmod(ttl, 1000)
         print("  Expires in: %dh%dm%ds" % (h, m, s))
         if args.token:
-            info = get_owner_info(fid, args.token)
-            print("  Download limit:", info['dlimit'])
-            print("  Downloads so far:", info['dtotal'])
+            try:
+                info = get_owner_info(fid, args.token)
+                print("  Download limit:", info['dlimit'])
+                print("  Downloads so far:", info['dtotal'])
+            except Exception as ex:
+                print("Failed to get owner information:", ex)
         return
     elif args.delete:
         if not args.token:
             parser.error("--delete requires -t/--token")
         if args.set_ttl is not None or args.set_dlimit is not None:
             parser.error("--delete can't be set with set_ttl or set_dlimit")
-        delete(fid, args.token)
-        print("File deleted.")
+        try:
+            delete(fid, args.token)
+            print("File deleted.")
+        except Exception as ex:
+            print("Failed to delete file:", ex)
         return
 
     params = {}
@@ -406,7 +419,10 @@ def main(argv):
     if params:
         if not args.token:
             parser.error("setting parameters requires -t/--token")
-        set_params(fid, args.token, **params)
+        try:
+            set_params(fid, args.token, **params)
+        except Exception as ex:
+            print("Failed to set paramaters:", ex)
         return
 
     if secret:
@@ -414,7 +430,7 @@ def main(argv):
         download(fid, secret, args.output or '.', args.password, args.target)
     else:
         # Assume they tried to upload a nonexistent file
-        raise OSError("File %s does not exist" % args.target)
+        print("File \"%s\" does not exist" % args.target)
 
 
 if __name__ == '__main__':
