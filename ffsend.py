@@ -65,7 +65,10 @@ def shortenUrl(url):
                     "https://tinyurl.com/api-create.php", data=byte_data).read()                
                 response = str(ret);
                 if (response.startswith("b\'http://") or response.startswith("b\'https://")) and response.endswith("\'"):
-                    result = response[2:-1].replace('http://', 'https://')
+                    response = response[2:-1]
+                response = response.replace('http://', 'https://')
+                if response.startswith("https://tinyurl.com/"):
+                    result = response;
     except Exception as ex:
         print("Failed to get shortned link. Error:", ex)
 
