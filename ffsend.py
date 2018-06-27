@@ -19,7 +19,6 @@ try:
 except ImportError:
     import urllib
 
-import re
 try:
     parse_helper = urllib.parse
 except AttributeError:
