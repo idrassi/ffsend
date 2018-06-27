@@ -358,6 +358,23 @@ def parse_args(argv):
 def main(argv):
     args, parser = parse_args(argv)
 
+    def do_set_params():
+        params = {}
+        if args.set_ttl is not None:
+            params['ttl'] = args.set_ttl * 1000
+        if args.set_dlimit is not None:
+            params['dlimit'] = args.set_dlimit
+        if params:
+            if not args.token:
+                parser.error("setting parameters requires -t/--token")
+            try:
+                set_params(fid, args.token, **params)
+                print("File parameters %s set" % str(params))
+                return True
+            except Exception as ex:
+                print("Failed to set paramaters:", ex)
+        return False
+
     if os.path.exists(args.target):
         if args.info or args.token or args.output:
             parser.error("-i/-t/-o must not be specified with an upload")
@@ -367,9 +384,11 @@ def main(argv):
         password=args.password
         if args.random_password:
             password = generatePassphrase()
-        url, ownerToken = upload(args.target, password=password)
+        url, args.token = upload(args.target, password=password)
 
-        if url is not None and ownerToken is not None:
+        if url is not None and args.token is not None:
+            fid, secret = parse_url(url)
+            do_set_params()
             if args.random_password:
                 print("Your random password is", password)
 
@@ -382,6 +401,8 @@ def main(argv):
     fid, secret = parse_url(args.target)
 
     if args.info:
+        if args.delete:
+            parser.error("--info and --delete are mutually exclusive")
         metadata, nonce = get_metadata(fid, secret, args.password, args.target)
         print("File ID %s:" % fid)
         print("  Filename:", metadata['metadata']['name'])
@@ -400,6 +421,7 @@ def main(argv):
                 print("  Downloads so far:", info['dtotal'])
             except Exception as ex:
                 print("Failed to get owner information:", ex)
+        do_set_params()
         return
     elif args.delete:
         if not args.token:
@@ -413,25 +435,14 @@ def main(argv):
             print("Failed to delete file:", ex)
         return
 
-    params = {}
-    if args.set_ttl is not None:
-        params['ttl'] = args.set_ttl * 1000
-    if args.set_dlimit is not None:
-        params['dlimit'] = args.set_dlimit
-    if params:
-        if not args.token:
-            parser.error("setting parameters requires -t/--token")
-        try:
-            set_params(fid, args.token, **params)
-        except Exception as ex:
-            print("Failed to set paramaters:", ex)
+    if do_set_params():
         return
 
     if secret:
         print("Downloading %s..." % args.target)
         download(fid, secret, args.output or '.', args.password, args.target)
     else:
-        # Assume they tried to upload a nonexistent file
+        # Assume they tried to upload a nonexistent file        
         print("File \"%s\" does not exist" % args.target)
 
 
